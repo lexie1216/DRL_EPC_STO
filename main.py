@@ -289,14 +289,29 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     # training
+    # args.city = 'sz'
+    # for level in ['high']:
+    #     args.R0 = level
+    #     for mode in [4, 2, 3, 5, -1, 1, 6, -2]:
+    #         args.experiment_idx = mode
+    #
+    #         args.lr_a = 3e-4
+    #         args.lr_c = 3e-4
+    #         args.load_model = False
+    #
+    #         main(args, seed=3047)
+
+    # for test the model
     args.city = 'sz'
-    for level in ['high']:
-        args.R0 = level
-        for mode in [4, 2, 3, 5, -1, 1, 6, -2]:
-            args.experiment_idx = mode
+    args.R0 = 'high'
+    eids = [4, 2, 3, 5, -1, 1, 6, -2]
+    mids = [80, 99, 98, 99, 100, 100, 100, 100]
 
-            args.lr_a = 3e-4
-            args.lr_c = 3e-4
-            args.load_model = False
+    for i in range(len(eids)):
+        args.experiment_idx = eids[i]
+        args.model_idx = mids[i]
 
-            main(args, seed=3047)
+
+        my_test(args)
+
+
