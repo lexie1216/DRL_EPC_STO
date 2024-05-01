@@ -8,40 +8,61 @@ import random
 import numpy as np
 import gym
 import matplotlib.pyplot as plt
-
-ZN = 74
+import pickle
 
 
 class EpidemicModel(gym.Env):
-    def __init__(self, reward_mode=1):
+    def __init__(self, reward_mode=1, city='sz', R0='high'):
         self.reward_mode = reward_mode
+        self.city = city
+        self.R0 = R0
 
-        # 子区域个数，完整模型74
-        self.ZONE_NUM = 74
 
         # 子区域邻接关系
-        self.ADJ = np.load('data/adj.npy', allow_pickle=True)
-        self.ADJ = self.ADJ - 1
+        with open('data/' + self.city + '/adj_dict.pkl', 'rb') as file:
+            self.adj_dict = pickle.load(file)
+
+        with open('data/' + self.city + '/flow_80_dict.pkl', 'rb') as file:
+            self.flow_80_dict = pickle.load(file)
+
+        if self.city =='sz':
+            with open('data/' + self.city + '/adm_dict.pkl', 'rb') as file:
+                self.adm_dict = pickle.load(file)
+
 
         # 子区域间流动
-        self.OD = np.load("data/flow.npy")[:self.ZONE_NUM, :self.ZONE_NUM]
-
-        # 将OD矩阵归一化到行之和为1
-        self.OD = self.OD / self.OD.sum(axis=1, keepdims=1)
+        self.OD = np.load('data/' + self.city + '/flow.npy')
 
         # 子区域人口数量
-        self.POP = np.load("data/population.npy")[:self.ZONE_NUM]
-
-        # 不考虑区域间流动的OD矩阵
-        # self.OD = np.identity(self.ZONE_NUM)
+        self.POP = np.load('data/' + self.city + '/population.npy')
+        self.ZONE_NUM = self.POP.shape[0]
 
         # 传染病相关参数（感染者移动比例、beta、潜伏期、恢复期）
         self.Pm = 0.4
-        self.betas = np.array([0.8] * self.ZONE_NUM)
+        self.beta = 0.8 if self.R0 == 'high' else 0.4
+
+        self.betas = np.array([self.beta] * self.ZONE_NUM)
         self.sigma = 1 / 3
         self.gamma = 1 / 7
 
-        self.capacity = 4e6
+        city_capacity = {
+            'sz': 4e6,
+            'tokyo': 2.2e6,
+            'nyc': 2e6,
+            'sh': 5.5e6
+        }
+
+        city_ylim = {
+            'sz': 9e6,
+            'tokyo': 6e6,
+            'nyc': 6e6,
+            'sh': 1.2e7
+        }
+
+        self.capacity = city_capacity[self.city]
+        self.capacity = self.capacity if self.R0 == 'high' else self.capacity / 2
+
+        self.ylim = city_ylim[self.city]
         # 模拟周期
         self.period = 120
 
@@ -50,23 +71,35 @@ class EpidemicModel(gym.Env):
 
         self.reset()
 
-        self.daily_new_E=[]
+        self.daily_new_E = []
+        self.daily_attack_rate=[]
 
-    def spatio_entropy(self, action):
+    def spatio_entropy(self, action, adj_dict):
         action = action.reshape(self.ZONE_NUM)
         spatial_ent = 0
-        for i in range(self.ZONE_NUM):
-            sample = action[self.ADJ[i].astype(int)]
+        for k, v in adj_dict.items():
+            if type(k) == str:
+                sample = action[v]
+                w = len(action[v])
+                # if self.reward_mode == -1:
+                #     w = 1
+
+            else:
+
+                sample = action[[k, *v]]
+                w = 1
             values, counts = np.unique(sample, return_counts=True)
             probabilities = counts / np.sum(counts)
             entropy = -np.sum(probabilities * np.log2(probabilities)) if len(probabilities) > 1 else 0
-            spatial_ent += entropy
+
+            spatial_ent += (entropy*w)
+
         return spatial_ent
 
     def reset(self):
         self.day = 1
         self.actions = [np.zeros(self.ZONE_NUM)]
-        self.rewards = []
+        self.history_cost = {"reward": [], "sdo": [], "fdo": [], "ado": []}
 
         self.simState = np.zeros((self.ZONE_NUM, 4))
         self.simState[:, 0] = self.POP
@@ -86,13 +119,12 @@ class EpidemicModel(gym.Env):
         random.seed(3074)
 
         rand_list = [random.randint(0, self.ZONE_NUM - 1) for _ in range(init_infection)]
-        rand_list = [i % self.ZONE_NUM for i in range(init_infection)]
+        # rand_list = [i % self.ZONE_NUM for i in range(init_infection)]
         for sid in rand_list:
             self.simState[sid, 1] += 1
             self.simState[sid, 0] -= 1
 
-    def step(self, action=np.zeros(ZN)):
-
+    def step(self, action):
         self.day += 1
         self.actions.append(action)
 
@@ -137,38 +169,63 @@ class EpidemicModel(gym.Env):
         health_cost = -max((total_infections - self.capacity) / self.capacity, 0)
 
         economy_cost = -action.sum() / self.ZONE_NUM
-        total_recovery = self.simState[:, 3].sum()
-        attack_rate = (total_recovery + total_infections) / 17493765
-        if attack_rate > 0.5:
-            economy_cost = economy_cost * 5
 
         t_order_cost = -np.abs(action - self.actions[-2]).sum() / self.ZONE_NUM
-        s_order_cost = -self.spatio_entropy(action) / self.ZONE_NUM
+        s_order_cost = -self.spatio_entropy(action, self.adj_dict) / self.ZONE_NUM
+        f_order_cost = -self.spatio_entropy(action, self.flow_80_dict) / self.ZONE_NUM
+
+        if self.city=='sz':
+            a_order_cost = -self.spatio_entropy(action, self.adm_dict) / self.ZONE_NUM
+        else:
+            a_order_cost=0
 
         if self.reward_mode == 2:
             order_cost = t_order_cost * 2  # 时间秩序-2
         elif self.reward_mode == 3:
-            order_cost = s_order_cost * 2  # 空间秩序-3
+            order_cost = s_order_cost *2  # 空间秩序-3
         elif self.reward_mode == 4:
             order_cost = 0  # 无秩序-4
+        elif self.reward_mode == 5:
+            order_cost = f_order_cost * 2  # flow秩序-5
+        elif self.reward_mode == 6:
+            order_cost = t_order_cost + f_order_cost  # ft秩序-6
+        elif self.reward_mode == -1:
+            order_cost = a_order_cost * 2
+        elif self.reward_mode == -2:
+            order_cost = t_order_cost + a_order_cost
         else:
-            order_cost = t_order_cost + s_order_cost  # 时空秩序-1
+            order_cost = t_order_cost + s_order_cost  # st秩序-1
 
-        reward = health_cost * 60 + economy_cost + order_cost
+        reward = health_cost * 60 + economy_cost + order_cost*2
 
-        self.rewards.append(reward)
+        self.history_cost['reward'].append(reward)
+        self.history_cost['sdo'].append(-s_order_cost)
+        self.history_cost['fdo'].append(-f_order_cost)
+        self.history_cost['ado'].append(-a_order_cost)
 
-        info = {"day": self.day, "health": health_cost * 60, "economy": economy_cost, "order": order_cost * 2,
-                "s_order": s_order_cost, "t_order": t_order_cost}
+        info = {}
         done = False
         if self.day > self.period:
+            self.simRes = np.array(self.simRes)
+            self.actions = np.array(self.actions)
+
+            episode_metrics = {
+                'ep_r': np.sum(self.history_cost['reward']),
+                'ep_overload': (np.max(np.sum(self.simRes[:, :, 2], axis=1)) - self.capacity) / self.capacity,
+                'ep_intensity': np.sum(self.actions),
+                'ep_sdo': np.sum(self.history_cost['sdo']),
+                'ep_fdo': np.sum(self.history_cost['fdo']),
+                'ep_tdo': np.sum(abs(self.actions[1:] - self.actions[:-1]), axis=0).sum(),
+                'ep_ado': np.sum(self.history_cost['ado'])
+            }
+            info = episode_metrics
+
             done = True
 
         return obs, reward, done, info
 
     def render(self, title=''):
-        self.simRes = np.array(self.simRes)
-        self.actions = np.array(self.actions)
+
         plt.figure(dpi=120, figsize=(4.2, 3.6))
         plt.grid(linestyle='-.', axis='both')
 
@@ -178,6 +235,7 @@ class EpidemicModel(gym.Env):
         plt.xlim(0, self.period)
         plt.xticks(range(0, self.period + 1, 20))
         plt.ylim(0, 1e7)
+        plt.ylim(0, self.ylim)
 
         plt.legend(fontsize=8, loc='upper left')
         plt.twinx()
@@ -188,57 +246,43 @@ class EpidemicModel(gym.Env):
         plt.ylim(-1, 3)
         plt.yticks(range(0, 3, 1))
 
-        plt.title("Daily Current Infection " + title)
+        plt.title("Daily Current Infection (" + self.city + ")")
 
         plt.legend(fontsize=8, loc='upper right')
 
         plt.show()
 
-        # for i in range(self.ZONE_NUM):
-        #     plt.plot(self.actions.T[i], alpha=0.3, color='0.5')
-        #     plt.ylim(-1, 4)
-        #     plt.yticks(range(0, 4, 1))
-        #     plt.show()
 
         return
 
 
 if __name__ == '__main__':
+    cities = ['sz', 'tokyo', 'nyc', 'sh']
+    env = EpidemicModel(city=cities[0], reward_mode=1, R0='high')
 
-    # actions = np.zeros((180, ZN))
-    actions = np.ones((180, ZN))
-    # actions = np.random.randint(3, size=(180, ZN))
+    actions = np.ones((120, env.ZONE_NUM))
 
-    env = EpidemicModel()
-    # actions[13:50, :] = 2
-
-    for i in range(1):
+    for i in range(3):
         env.reset()
         ep_s = 0
         ep_r = 0
         while True:
 
             s_, r, done, info = env.step(action=actions[ep_s] * i)
-            # print(s_.shape)
             ep_s += 1
             ep_r += r
 
-            # print(ep_s,r)
-
             if done:
+                ep_r, ep_overload, ep_intensity, ep_sdo, ep_fdo, ep_ado, ep_tdo = info.values()
                 env.render()
-                np.save('no_intervention_simRe.npy', np.array(env.simRes))
 
-                print("end of episode %d||  reward:%.2f, steps:%d" % (i, ep_r, ep_s))
-                max_I = np.max(np.sum(env.simRes[:, :, 2], axis=1))
-                overload = (max_I - env.capacity) / env.capacity
-                print(overload)
-                print(env.daily_new_E)
+                peak_day = np.argmax(np.sum(env.simRes[:, :, 2], axis=1))
+                print(np.max(np.sum(env.simRes[:, :, 2], axis=1)))
+                print(
+                    "level %d||  reward:%d\t  overload:%.4f\t intensity:%.2f\t tdo:%.4f\t sdo:%.4f\t fdo:%.2f\t ado:%.2f\t peak_day:%d" % (
+                        i, ep_r, ep_overload, ep_intensity, ep_tdo, ep_sdo, ep_fdo, ep_ado, peak_day))
 
-                import csv
-                with open("daily_new_E.csv", 'w', newline='') as t:  # numline是来控制空的行数的
-                    writer = csv.writer(t)  # 这一步是创建一个csv的写入器（个人理解）
-                    writer.writerows(env.daily_new_E)  # 写入样本数据
+                np.save(f'res/simRes_{env.city}_{env.R0}_level_{i}.npy', np.array(env.simRes))
 
                 env.reset()
                 break

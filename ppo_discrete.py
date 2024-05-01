@@ -1,10 +1,15 @@
+# -*- ecoding: utf-8 -*-
+# @ModuleName: ppo_discrete
+# @Function: 
+# @Author: Lexie
+# @Time: 2023/10/30 14:20
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from torch.utils.data.sampler import BatchSampler, SubsetRandomSampler
 from torch.distributions import Categorical
-
+import os
 
 # Trick 8: orthogonal initialization
 def orthogonal_init(layer, gain=1.0):
@@ -17,19 +22,28 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
         self.fc1 = nn.Linear(args.state_dim * args.zone_num, args.hidden_width)
         self.fc2 = nn.Linear(args.hidden_width, args.hidden_width)
-        self.fc3 = nn.Linear(args.hidden_width, args.action_dim * args.zone_num)
+        self.zone_num = args.zone_num
+
+        self.heads = torch.nn.ModuleList([
+            torch.nn.Linear(args.hidden_width, args.action_dim) for _ in range(self.zone_num)
+        ])
+
+        # self.fc3 = nn.Linear(args.hidden_width, args.action_dim * args.zone_num)
         self.activate_func = [nn.ReLU(), nn.Tanh()][args.use_tanh]  # Trick10: use tanh
 
         if args.use_orthogonal_init:
             # print("------use_orthogonal_init------")
             orthogonal_init(self.fc1)
             orthogonal_init(self.fc2)
-            orthogonal_init(self.fc3, gain=0.01)
+            for head in self.heads:
+                orthogonal_init(head, gain=0.01)
 
     def forward(self, s):
         s = self.activate_func(self.fc1(s))
         s = self.activate_func(self.fc2(s))
-        logits = self.fc3(s)
+        logits  = [self.heads[i](s) for i in range(self.zone_num)]
+
+        # logits = self.fc3(s)
 
         return logits
 
@@ -76,7 +90,15 @@ class PPO_discrete:
         self.state_dim = args.state_dim
         self.zone_num = args.zone_num
 
-        self.path_idx = args.experiment_idx
+
+        self.directory = "./model/{}/{}_{}".format(args.R0,args.city, args.experiment_idx)
+        # 检查目录是否存在，如果不存在则创建
+        if not os.path.exists(self.directory):
+            os.makedirs(self.directory)
+
+
+
+
 
         self.actor = Actor(args)
         self.critic = Critic(args)
@@ -90,7 +112,8 @@ class PPO_discrete:
     def evaluate(self, s):  # When evaluating the policy, we select the action with the highest probability
         s = torch.unsqueeze(torch.tensor(s, dtype=torch.float), 0)
         logits = self.actor(s)
-        split_logits = torch.split(logits, [self.action_dim] * self.zone_num, dim=-1)
+        split_logits = logits
+        # split_logits = torch.split(logits, [self.action_dim] * self.zone_num, dim=-1)
         action = torch.Tensor([torch.argmax(logits).item() for logits in split_logits])
         return action.T
 
@@ -98,7 +121,8 @@ class PPO_discrete:
         s = torch.unsqueeze(torch.tensor(s, dtype=torch.float), 0)
         with torch.no_grad():
             logits = self.actor(s)
-            split_logits = torch.split(logits, [self.action_dim] * self.zone_num, dim=-1)
+            split_logits = logits
+            # split_logits = torch.split(logits, [self.action_dim] * self.zone_num, dim=-1)
             multi_categoricals = [Categorical(probs=torch.softmax(logits, dim=-1)) for logits in split_logits]
             action = torch.stack([categorical.sample() for categorical in multi_categoricals])
             logprob = torch.stack([categorical.log_prob(a) for a, categorical in zip(action, multi_categoricals)])
@@ -132,7 +156,8 @@ class PPO_discrete:
             # Random sampling and no repetition. 'False' indicates that training will continue even if the number of samples in the last time is less than mini_batch_size
             for index in BatchSampler(SubsetRandomSampler(range(self.batch_size)), self.mini_batch_size, False):
                 probs = self.actor(s[index])
-                split_probs = torch.split(probs, [self.action_dim] * self.zone_num, dim=-1)
+                split_probs=probs
+                # split_probs = torch.split(probs, [self.action_dim] * self.zone_num, dim=-1)
 
                 dist_now = [Categorical(probs=torch.softmax(prob, dim=-1)) for prob in split_probs]
 
@@ -180,13 +205,11 @@ class PPO_discrete:
         return lr_a_now
 
     def save(self, episode):
-        torch.save(self.critic.state_dict(), "./model{}/ppo_critic{}.pth".format(self.path_idx, episode))
-        torch.save(self.actor.state_dict(), "./model{}/ppo_actor{}.pth".format(self.path_idx, episode))
+
+        torch.save(self.critic.state_dict(), os.path.join(self.directory, "ppo_critic{}.pth".format(episode)))
+        torch.save(self.actor.state_dict(), os.path.join(self.directory, "ppo_actor{}.pth".format(episode)))
 
     def load(self, episode):
-        self.critic.load_state_dict(torch.load("./model/ppo_critic{}.pth".format(episode)))
-        self.actor.load_state_dict(torch.load("./model/ppo_actor{}.pth".format(episode)))
 
-    def load_with_id(self, episode):
-        self.critic.load_state_dict(torch.load("./model{}/ppo_critic{}.pth".format(self.path_idx, episode)))
-        self.actor.load_state_dict(torch.load("./model{}/ppo_actor{}.pth".format(self.path_idx, episode)))
+        self.critic.load_state_dict(torch.load(os.path.join(self.directory, "ppo_critic{}.pth".format(episode))))
+        self.actor.load_state_dict(torch.load(os.path.join(self.directory, "ppo_actor{}.pth".format(episode))))

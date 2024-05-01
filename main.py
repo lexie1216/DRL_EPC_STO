@@ -1,7 +1,7 @@
 import torch
 import numpy as np
-from normalization import Normalization, RewardScaling
-from replaybuffer import ReplayBuffer
+from utils.normalization import Normalization, RewardScaling
+from utils.replaybuffer import ReplayBuffer
 from ppo_discrete import PPO_discrete
 from datetime import datetime
 import argparse
@@ -11,7 +11,6 @@ import logging
 from meta_env import EpidemicModel
 
 import warnings
-import antropy as ant
 
 warnings.filterwarnings("ignore")
 
@@ -43,84 +42,87 @@ def get_logger(logpath, filepath, package_files=[],
 
 
 def evaluate_policy(args, env, agent, state_norm):
-    times = 1
-    evaluate_reward = 0
-    evaluate_sorder = 0
-    evaluate_torder = 0
-    for _ in range(times):
+    num_episodes = 1
+    total_rewards, total_overload, total_intensity, total_sdo, total_fdo, total_tdo, total_ado = 0, 0, 0, 0, 0, 0, 0
+
+    for _ in range(num_episodes):
         s = env.reset()
         if args.use_state_norm:  # During the evaluating,update=False
             s = state_norm(s, update=False)
         done = False
-        episode_reward = 0
-        episode_sorder = 0
-        episode_torder = 0
-        step = 0
+
         while not done:
-            step = step + 1
 
             a = agent.evaluate(s)  # We use the deterministic policy during the evaluating
             s_, r, done, info = env.step(np.array(a))
-            s_order = info['s_order']
-            t_order = info['t_order']
+
             if args.use_state_norm:
                 s_ = state_norm(s_, update=False)
-            episode_reward += r
-            episode_sorder += s_order
-            episode_torder += t_order
-            # print(step,info['day'],s_order)
-            # if step % 5 == 1 and step>10 and step<35:
-            #     print(info['day'],info['s_order'])
 
             s = s_
+        ep_r, ep_overload, ep_intensity, ep_sdo, ep_fdo, ep_tdo, ep_ado = info.values()
+
         env.render()
-        evaluate_reward += episode_reward
-        evaluate_sorder += episode_sorder
-        evaluate_torder += episode_torder
-        max_I = np.max(np.sum(env.simRes[:, :, 2], axis=1), axis=0)
-        sum_level = np.sum(env.actions)
 
-        evaluate_t_ent = 0
-        for i in range(env.actions.shape[1]):
-            a = env.actions[:, i]
-            p_e = ant.perm_entropy(a,order=10)
-            evaluate_t_ent += p_e
+        total_rewards += ep_r
+        total_overload += ep_overload
+        total_intensity += ep_intensity
+        total_sdo += ep_sdo
+        total_fdo += ep_fdo
+        total_tdo += ep_tdo
+        total_ado += ep_ado
 
-        evaluate_torder = np.sum(abs(env.actions[1:] - env.actions[:-1]), axis=0).sum()
+    average_reward = total_rewards / num_episodes
+    average_overload = total_overload / num_episodes
+    average_intensity = total_intensity / num_episodes
+    average_sdo = total_sdo / num_episodes
+    average_fdo = total_fdo / num_episodes
+    average_tdo = total_tdo / num_episodes
+    average_ado = total_ado / num_episodes
 
-    return round(evaluate_reward / times, 2), round(max_I, 0), sum_level, round(evaluate_sorder / times, 2), round(
-        evaluate_torder / times, 2), evaluate_t_ent
+    return (
+        average_reward,
+        average_overload,
+        average_intensity,
+        average_sdo,
+        average_fdo,
+        average_tdo,
+        average_ado
+    )
 
 
 def my_test(args):
     model_idx = args.model_idx
-    eval_env = EpidemicModel()
+    eval_env = EpidemicModel(city=args.city, R0=args.R0)
+    args.zone_num = eval_env.ZONE_NUM
     agent = PPO_discrete(args)
-    agent.load_with_id(model_idx)
-    sum_reward = 0
+    agent.load(model_idx)
+
     for i in range(1):
-        e_reward, e_max_I, e_sum_level, e_s_order, e_t_order ,e_t_ent= evaluate_policy(args, eval_env, agent,
-                                                                               args.use_state_norm)
-        sum_reward += e_reward
-        overload = (e_max_I - eval_env.capacity) / eval_env.capacity
-        overload = round(overload * 100, 2)
+        e_r, e_overload, e_intensity, e_sdo, e_fdo, e_tdo, e_ado = evaluate_policy(args, eval_env, agent,
+                                                                                   args.use_state_norm)
         print(
-            'experiment:{}\t model:{}\t ep_reward:{}\t max_infections:{}({}%)\t sum_level:{}\t spatial_entropy:{} temporal_change:{}'.format(
-                args.experiment_idx, args.model_idx, e_reward, e_max_I, overload, e_sum_level, e_s_order, e_t_order))
+            'experiment:%d\t model:%d\t reward:%.2f\t overload_ratio:%.2f%%\t intensity:%.3f\t sdo:%.3f tdo:%.3f fdo:%.3f ado:%.3f' %
+            (args.experiment_idx, args.model_idx,
+             e_r,
+             e_overload * 100,
+             e_intensity / eval_env.period / eval_env.ZONE_NUM,
+             e_sdo / eval_env.period,
+             e_tdo / eval_env.ZONE_NUM,
+             e_fdo / eval_env.period,
+             e_ado / eval_env.period)
+        )
 
-        print(
-            'experiment:{}\t model:{}\t overload_ratio:{}%\t average_intensity:{}\t spatial_entropy:{} temporal_change:{} perm_ent:{}'.format(
-                args.experiment_idx, args.model_idx, overload, round(e_sum_level / 120 / 74, 4),
-                round(e_s_order / 120, 4), round(e_t_order / 74, 4),round(e_t_ent / 74, 4)))
-
-        np.save('model%d/simRes%d.npy' % (args.experiment_idx, model_idx), np.array(eval_env.simRes))
-        np.save('model%d/actions%d.npy' % (args.experiment_idx, model_idx), np.array(eval_env.actions))
+        np.save(f"res/model_{args.city}_{str(args.experiment_idx)}_{str(args.model_idx)}_{args.R0}_simRes.npy",
+                np.array(eval_env.simRes))
+        np.save(f"res/model_{args.city}_{str(args.experiment_idx)}_{str(args.model_idx)}_{args.R0}_actions.npy",
+                np.array(eval_env.actions))
         eval_env.close()
 
 
 def main(args, seed):
-    env = EpidemicModel(args.experiment_idx)
-    env_evaluate = EpidemicModel(args.experiment_idx)
+    env = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0, use_trick=args.use_trick)
+    env_evaluate = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0, use_trick=args.use_trick)
     # Set random seed
     env.seed(seed)
     env_evaluate.seed(seed)
@@ -128,7 +130,7 @@ def main(args, seed):
     torch.manual_seed(seed)
 
     args.max_episode_steps = env.period  # Maximum number of steps per episode
-    args.zone_num = env.ZONE_NUM  # Maximum number of steps per episode
+    args.zone_num = env.ZONE_NUM
 
     evaluate_num = 0  # Record the number of evaluations
     evaluate_rewards = []  # Record the rewards during the evaluating
@@ -138,27 +140,26 @@ def main(args, seed):
     agent = PPO_discrete(args)
     # 使用预训练模型
     if args.load_model:
-        agent.load_with_id(args.model_idx)
+        agent.load(args.model_idx)
         evaluate_num += args.model_idx
 
     # Build a tensorboard
 
     timenow = str(datetime.now())[0:-10]
     timenow = '_' + timenow[0:10] + '_' + timenow[-5:-3] + '-' + timenow[-2:] + '_'
-    #     timenow = '_2023-06-04_12-10'
-    writepath = 'runs/epidemic' + timenow + str(args.experiment_idx)
+    writepath = 'runs/' + args.city + timenow + str(args.experiment_idx) + "_" + args.R0
     if os.path.exists(writepath): shutil.rmtree(writepath)
     writer = SummaryWriter(log_dir=writepath)
 
-    #######LOGGING#######
-    log_path = os.path.join("logs", "epidemic" + timenow + str(args.experiment_idx) + ".log")
+    # LOGGING
+    log_path = os.path.join("logs", args.city + timenow + str(args.experiment_idx) + "_" + args.R0 + ".log")
     if not os.path.exists(f"logs"):
         os.makedirs(f"logs")
 
     logger = get_logger(logpath=log_path, filepath=os.path.abspath(__file__))
     logger.info(args)
     logger.info(
-        f'task starts: {str(datetime.now())[0:-10]} ,state_dim: {args.state_dim} action_dim: {args.action_dim} zone_num: {args.zone_num}')
+        f'task starts: {str(datetime.now())[0:-10]}')
 
     state_norm = Normalization(shape=args.state_dim)  # Trick 2:state normalization
     if args.use_reward_norm:  # Trick 3:reward normalization
@@ -211,33 +212,47 @@ def main(args, seed):
             # Evaluate the policy every 'evaluate_freq' steps
             if total_steps % args.evaluate_freq == 0:
                 evaluate_num += 1
-                evaluate_reward, e_max_I, e_sum_level, e_s_order, e_t_order,e_t_ent = evaluate_policy(args, env_evaluate, agent,
-                                                                                              state_norm)
-                evaluate_rewards.append(evaluate_reward)
 
-                writer.add_scalar('eval_Index/ep_r', evaluate_reward, global_step=total_steps)
-                writer.add_scalar('eval_Index/max_I', e_max_I, global_step=total_steps)
-                writer.add_scalar('eval_Index/sum_Level', e_sum_level, global_step=total_steps)
-                writer.add_scalar('eval_Index/spatial_order', e_s_order, global_step=total_steps)
-                writer.add_scalar('eval_Index/temporal_change', e_t_order, global_step=total_steps)
-                writer.add_scalar('eval_Index/temporal_entropy', e_t_ent, global_step=total_steps)
+                e_r, e_overload, e_intensity, e_sdo, e_fdo, e_tdo, e_ado = evaluate_policy(args,
+                                                                                           env_evaluate,
+                                                                                           agent,
+                                                                                           state_norm)
+                evaluate_rewards.append(e_r)
+
+                writer.add_scalar('eval_Index/ep_r', e_r, global_step=total_steps)
+                writer.add_scalar('eval_Index/ep_overload', e_overload, global_step=total_steps)
+                writer.add_scalar('eval_Index/ep_intensity', e_intensity, global_step=total_steps)
+                writer.add_scalar('eval_Index/ep_sdo', e_sdo, global_step=total_steps)
+                writer.add_scalar('eval_Index/ep_tdo', e_tdo, global_step=total_steps)
+                writer.add_scalar('eval_Index/ep_fdo', e_fdo, global_step=total_steps)
+                writer.add_scalar('eval_Index/ep_ado', e_ado, global_step=total_steps)
+
                 logger.info(
-                    f'evaluate_num:{evaluate_num} starts: {str(datetime.now())[0:-10]} \t evaluate_reward:{evaluate_reward}\t max_I:{e_max_I} \t sum_level:{e_sum_level}\t spatial_entropy:{e_s_order}\t temporal_change:{e_t_order}\t temporal_ent:{e_t_ent}\t')
+                    'evaluate_num:%d starts: %s\t reward:%.2f\t overload:%.2f%% \t intensity:%.3f\t sdo:%.3f\t tdo:%.3f\t fdo:%.3f\t ado:%.3f\t' %
+                    (evaluate_num, str(datetime.now())[0:-10], e_r, e_overload * 100,
+                     e_intensity / env.period / env.ZONE_NUM,
+                     e_sdo / env.period,
+                     e_tdo / env.ZONE_NUM,
+                     e_fdo / env.period,
+                     e_ado / env.period)
+                )
 
                 agent.save(evaluate_num)
 
+    for handler in logger.handlers:
+        handler.close()
+    logger.handlers = []
+    logging.shutdown()
+
 
 parser = argparse.ArgumentParser("Hyperparameter Setting for PPO-discrete")
-parser.add_argument("--max_train_steps", type=int, default=int(6e6), help=" Maximum number of training steps")
+parser.add_argument("--max_train_steps", type=int, default=int(1.2e6), help=" Maximum number of training steps")
 parser.add_argument("--evaluate_freq", type=float, default=1.2e4,
                     help="Evaluate the policy every 'evaluate_freq' steps")
 parser.add_argument("--save_freq", type=int, default=10, help="Save frequency")
 parser.add_argument("--batch_size", type=int, default=2048, help="Batch size")
 parser.add_argument("--mini_batch_size", type=int, default=64, help="Minibatch size")
-parser.add_argument("--hidden_width", type=int, default=256,
-                    help="The number of neurons in hidden layers of the neural network")
-parser.add_argument("--lr_a", type=float, default=3e-4, help="Learning rate of actor")
-parser.add_argument("--lr_c", type=float, default=3e-4, help="Learning rate of critic")
+
 parser.add_argument("--gamma", type=float, default=0.99, help="Discount factor")
 parser.add_argument("--lamda", type=float, default=0.95, help="GAE parameter")
 parser.add_argument("--epsilon", type=float, default=0.2, help="PPO clip parameter")
@@ -255,37 +270,33 @@ parser.add_argument("--use_tanh", type=float, default=True, help="Trick 10: tanh
 
 parser.add_argument("--state_dim", type=int, default=int(7), help="state dimension")
 parser.add_argument("--action_dim", type=int, default=int(3), help="action dimension")
-parser.add_argument("--zone_num", type=int, default=int(74), help="zone num")
+
+parser.add_argument("--hidden_width", type=int, default=256,
+                    help="The number of neurons in hidden layers of the neural network")
+
+parser.add_argument("--lr_a", type=float, default=1e-5, help="Learning rate of actor")
+parser.add_argument("--lr_c", type=float, default=1e-5, help="Learning rate of critic")
 
 parser.add_argument("--load_model", type=bool, default=False, help="load pretrained model or Not")
-parser.add_argument("--model_idx", type=int, default=int(200), help="which model to load")
+parser.add_argument("--model_idx", type=int, default=int(100), help="which model to load")
 parser.add_argument("--experiment_idx", type=int, default=int(1),
                     help="experiment id determining the reward function and save path")
+
+parser.add_argument("--city", type=str, default='nyc', help="case")
+parser.add_argument("--R0", type=str, default='low', help="scenario")
 
 args = parser.parse_args()
 
 if __name__ == '__main__':
-    # args.experiment_idx = 4
-    # args.model_idx = 100
-    # args.load_model = True
-    # args.lr_a = 1e-6
-    # args.lr_c = 1e-6
-    # args.max_train_steps = int(1.2e6)
-    #
-    # main(args,seed=3047)
+    # training
+    args.city = 'sz'
+    for level in ['high']:
+        args.R0 = level
+        for mode in [4, 2, 3, 5, -1, 1, 6, -2]:
+            args.experiment_idx = mode
 
-    args.model_idx = 200
+            args.lr_a = 3e-4
+            args.lr_c = 3e-4
+            args.load_model = False
 
-    # for i in range(4):
-    #     args.experiment_idx = i + 1
-    #     my_test(args)
-    for i in [2,3]:
-        args.experiment_idx = i + 1
-        my_test(args)
-
-    # args.experiment_idx = 4
-    # args.model_idx = 300
-    # my_test(args)
-    # args.experiment_idx = 4
-    # args.model_idx = 301
-    # my_test(args)
+            main(args, seed=3047)
