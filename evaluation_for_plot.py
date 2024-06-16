@@ -11,6 +11,7 @@ import logging
 from meta_env import EpidemicModel
 
 import warnings
+import antropy as ant
 
 warnings.filterwarnings("ignore")
 
@@ -60,6 +61,7 @@ def evaluate_policy(args, env, agent, state_norm):
                 s_ = state_norm(s_, update=False)
 
             s = s_
+
         ep_r, ep_overload, ep_intensity, ep_sdo, ep_fdo, ep_tdo, ep_ado = info.values()
 
         env.render()
@@ -121,8 +123,8 @@ def my_test(args):
 
 
 def main(args, seed):
-    env = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0, use_trick=args.use_trick)
-    env_evaluate = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0, use_trick=args.use_trick)
+    env = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0)
+    env_evaluate = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0)
     # Set random seed
     env.seed(seed)
     env_evaluate.seed(seed)
@@ -147,11 +149,12 @@ def main(args, seed):
 
     timenow = str(datetime.now())[0:-10]
     timenow = '_' + timenow[0:10] + '_' + timenow[-5:-3] + '-' + timenow[-2:] + '_'
+    #     timenow = '_2023-06-04_12-10'
     writepath = 'runs/' + args.city + timenow + str(args.experiment_idx) + "_" + args.R0
     if os.path.exists(writepath): shutil.rmtree(writepath)
     writer = SummaryWriter(log_dir=writepath)
 
-    # LOGGING
+    #######LOGGING#######
     log_path = os.path.join("logs", args.city + timenow + str(args.experiment_idx) + "_" + args.R0 + ".log")
     if not os.path.exists(f"logs"):
         os.makedirs(f"logs")
@@ -284,33 +287,24 @@ parser.add_argument("--experiment_idx", type=int, default=int(1),
 
 parser.add_argument("--city", type=str, default='nyc', help="case")
 parser.add_argument("--R0", type=str, default='low', help="scenario")
-
 args = parser.parse_args()
 
 if __name__ == '__main__':
-    # training
-    # args.city = 'sz'
-    # for level in ['high']:
-    #     args.R0 = level
-    #     for mode in [4, 2, 3, 5, -1, 1, 6, -2]:
-    #         args.experiment_idx = mode
-    #
-    #         args.lr_a = 3e-4
-    #         args.lr_c = 3e-4
-    #         args.load_model = False
-    #
-    #         main(args, seed=3047)
 
-    # for test the model
     args.city = 'sz'
     args.R0 = 'high'
     eids = [4, 2, 3, 5, -1, 1, 6, -2]
     mids = [80, 99, 98, 99, 100, 100, 100, 100]
 
+    # args.city = 'nyc'
+    # args.R0 = 'high'
+    #
+    # eids = [4,  3, 5]
+    # mids = [100, 100, 100]
+
     for i in range(len(eids)):
         args.experiment_idx = eids[i]
         args.model_idx = mids[i]
-
 
         my_test(args)
 

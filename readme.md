@@ -1,85 +1,49 @@
 # DRL-based Epidemic Control Considering ST-Orderliness
 
-
-[//]: # (## Contents)
-
-[//]: # ()
-[//]: # (- [Introduction]&#40;#Introduction&#41;)
-
-[//]: # (- [Usages]&#40;#Usages&#41;)
-
-
 ## Introduction
 
-A deep-reinforcement-learning-based (DRL) model to optimize the epidemic control strategies with a focus of considering the coordination of interventions in both spatial and temporal dimensions. 
-
+A deep-reinforcement-learning-based (DRL) model to optimize epidemic control strategies with a focus on considering the coordination of interventions in both spatial and temporal dimensions.
 
 ## Usages
 
-[//]: # ()
-[//]: # (train the RL agent considering st-order-adj from initial)
+The values of "experiment_idx" and their corresponding experiments are as follows:
 
-[//]: # ()
-[//]: # (```shell)
-
-[//]: # (python main.py --experiment_idx 1 --load_model False)
-
-[//]: # (```)
-
-[//]: # (train the RL agent considering no-order from a ckpt)
-
-[//]: # (```shell)
-
-[//]: # (python main.py --experiment_idx 4 --load_model True --model_idx 100 --lr_a 1e-5  --lr_c 1e-5)
-
-[//]: # (```)
-
-The values of "experiment_idx" and their corresponding experiments are as follows:  
-  
-- `4` corresponds to "basic"  
-- `2` corresponds to "t-order"  
-- `3`, `5`, `-1` correspond to "s-order-adj", "s-order-mob", "s-order-adm", respectively  
+- `4` corresponds to "basic"
+- `2` corresponds to "t-order"
+- `3`, `5`, `-1` correspond to "s-order-adj", "s-order-mob", "s-order-adm", respectively
 - `1`, `6`, `-2` correspond to "st-order-adj", "st-order-mob", "st-order-adm", respectively
 
+### Training the Model
 
-[//]: # (To test a trained model, follow these steps in the main.py file:)
-[//]: # (To test a trained model, just run main.py file)
+1. **Data Storage:**
+   - Required data are stored in the `data/city` directory.
+   - The files `adj_dict.pkl`, `flow_top3_dict.pkl`, and `adm_dict.pkl` contain the spatial interaction relationships for the three types of spatial orderliness: geographical adjacency of sub-regions, population mobility relationships, and administrative management relationships, respectively.
+   - `flow.npy` is the intra-urban human mobility matrix.
+   - `population.npy` contains the population distribution information.
+
+2. **Training Setup:**
+   - In `train.py`, you can set parameters such as the city, R0, ST-Order scenario, and DRL algorithm-related parameters.
+   - Run `train.py` to start training.
+   - The trained model checkpoints will be saved in the `model` directory.
+
+### Testing the Trained Model
+
+1. **Model Testing:**
+   - `test.py` will test each model 1000 times (with the initial distribution of infected individuals being random each time). The results of these tests will be saved in the `res` directory as `evluation_index_{city_name}_{R_0}.pickle` files.
+   - `evaluation_ttest.py` reads the above pickle files and performs a t-test to obtain the results for the table in the manuscript, which are saved in `evluation_results_{city_name}_{R_0}.xlsx` files.
+
+2. **Control Strategy Visualization:**
+   - To display the spatial-temporal distribution of control strategies in the manuscript, we fix the initial distribution of infected individuals for a single test and save the simulation results in `res/simRes.npy` and `actions.npy`.
+   - The `utils` directory contains several scripts for plotting figures:
+     - `plot_seir.py` can be used to plot the curves shown in Figure 5 and Figure 6c.
+     - `plot_t_contrast.py` and `plot_s_contrast.py` are used to plot the comparisons of temporal orderliness and spatial orderliness in Figure 6a and Figure 6b, respectively.
+
+[//]: # (### Example Commands)
 
 [//]: # ()
-[//]: # (Set )
-
-[//]: # (1. Comment out the call to main&#40;&#41; on line 270.)
-
-[//]: # (2. Uncomment the call to my_test&#40;&#41; on line 273.)
+[//]: # (#### Training)
 
 [//]: # ()
-[//]: # (After making these changes, run the main.py script to test the trained model.)
+[//]: # (```bash)
 
-[//]: # (```shell)
-
-[//]: # (python main.py --experiment_idx 1 --model_idx 200)
-
-[//]: # (```)
-
-[//]: # (If you want to)
-### Note:
-We are unable to publicly share the flow data of **Shenzhen** required for this project. In order to ensure smooth execution and allow you to explore the functionality, you can generate a flow.npy file of size 74x74 on your own.
-
-If you wish to conduct tests or experiments, we provide the following sample code to help you generate a synthetic flow.npy file:
-
-```python
-import numpy as np
-
-# Generate a random 74x74 array
-flow_data = np.random.random((74, 74))
-
-# Normalize the rows to sum up to 1
-flow_data_normalized = flow_data / np.sum(flow_data, axis=1, keepdims=True)
-
-# Save it as flow.npy file
-np.save('flow.npy', flow_data_normalized)
-```
-Please note that this is just an example, and the generated data is random.
-
-
-However, we provide the mobility networks of **NYC and Tokyo**, which are generated by gravity model.
+[//]: # (python train.py --city city_name --R0 R0_value --experiment_idx experiment_index --other_parameters ...)

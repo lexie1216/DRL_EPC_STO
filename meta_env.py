@@ -1,6 +1,6 @@
 # -*- ecoding: utf-8 -*-
 # @ModuleName: meta_env
-# @Function: 
+# @Function:
 # @Author: Lexie
 # @Time: 2023/4/14 13:52
 import random
@@ -16,14 +16,12 @@ class EpidemicModel(gym.Env):
         self.reward_mode = reward_mode
         self.city = city
         self.R0 = R0
-
-
         # 子区域邻接关系
         with open('data/' + self.city + '/adj_dict.pkl', 'rb') as file:
             self.adj_dict = pickle.load(file)
 
-        with open('data/' + self.city + '/flow_80_dict.pkl', 'rb') as file:
-            self.flow_80_dict = pickle.load(file)
+        with open('data/' + self.city + '/flow_top3_dict.pkl', 'rb') as file:
+            self.flow_top3_dict = pickle.load(file)
 
         if self.city =='sz':
             with open('data/' + self.city + '/adm_dict.pkl', 'rb') as file:
@@ -81,11 +79,7 @@ class EpidemicModel(gym.Env):
             if type(k) == str:
                 sample = action[v]
                 w = len(action[v])
-                # if self.reward_mode == -1:
-                #     w = 1
-
             else:
-
                 sample = action[[k, *v]]
                 w = 1
             values, counts = np.unique(sample, return_counts=True)
@@ -115,11 +109,8 @@ class EpidemicModel(gym.Env):
         return obs
 
     def set_init_seed(self, init_infection=100):
-        # 随机撒种子
         random.seed(3074)
-
         rand_list = [random.randint(0, self.ZONE_NUM - 1) for _ in range(init_infection)]
-        # rand_list = [i % self.ZONE_NUM for i in range(init_infection)]
         for sid in rand_list:
             self.simState[sid, 1] += 1
             self.simState[sid, 0] -= 1
@@ -172,7 +163,7 @@ class EpidemicModel(gym.Env):
 
         t_order_cost = -np.abs(action - self.actions[-2]).sum() / self.ZONE_NUM
         s_order_cost = -self.spatio_entropy(action, self.adj_dict) / self.ZONE_NUM
-        f_order_cost = -self.spatio_entropy(action, self.flow_80_dict) / self.ZONE_NUM
+        f_order_cost = -self.spatio_entropy(action, self.flow_top3_dict) / self.ZONE_NUM
 
         if self.city=='sz':
             a_order_cost = -self.spatio_entropy(action, self.adm_dict) / self.ZONE_NUM
@@ -252,14 +243,12 @@ class EpidemicModel(gym.Env):
 
         plt.show()
 
-
         return
 
 
 if __name__ == '__main__':
     cities = ['sz', 'tokyo', 'nyc', 'sh']
     env = EpidemicModel(city=cities[0], reward_mode=1, R0='high')
-
     actions = np.ones((120, env.ZONE_NUM))
 
     for i in range(3):
