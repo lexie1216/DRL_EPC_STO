@@ -1,7 +1,7 @@
 # -*- ecoding: utf-8 -*-
 # @ModuleName: ppo_discrete
 # @Function: 
-# @Author: Lexie
+#  
 # @Time: 2023/10/30 14:20
 import torch
 import torch.nn as nn

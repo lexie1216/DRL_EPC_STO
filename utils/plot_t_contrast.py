@@ -1,7 +1,6 @@
 # -*- ecoding: utf-8 -*-
 # @ModuleName: plot_t_contrast
-# @Function: 
-# @Author: Lexie
+# @Function:
 # @Time: 2024/3/4 21:03
 
 import numpy as np

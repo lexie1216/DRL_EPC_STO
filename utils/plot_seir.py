@@ -1,7 +1,6 @@
 # -*- ecoding: utf-8 -*-
 # @ModuleName: plot_seir
-# @Function: 
-# @Author: Lexie
+# @Function:
 # @Time: 2024/3/3 21:59
 import numpy as np
 import matplotlib.pyplot as plt

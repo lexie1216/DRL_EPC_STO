@@ -1,7 +1,7 @@
 # -*- ecoding: utf-8 -*-
 # @ModuleName: mobility_generation
 # @Function: 用深圳市的home-based flow拟合gravity model，为其他三个城市生成flow
-# @Author: Lexie
+#
 # @Time: 2023/12/27 19:41
 import numpy as np
 import pandas as pd

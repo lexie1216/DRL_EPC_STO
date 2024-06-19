@@ -1,4 +1,6 @@
-# DRL-based Epidemic Control Considering ST-Orderliness
+# Code Instructions
+
+The data and codes that used in this research are available on GitHub with the unique identifier at the link [https://github.com/lexie1216/DRL\_EPC\_STO](https://github.com/lexie1216/DRL\_EPC\_STO). 
 
 ## Introduction
 
@@ -40,10 +42,10 @@ The values of "experiment_idx" and their corresponding experiments are as follow
 
 [//]: # (### Example Commands)
 
-[//]: # ()
+[//]: #
 [//]: # (#### Training)
 
-[//]: # ()
+[//]: #
 [//]: # (```bash)
 
 [//]: # (python train.py --city city_name --R0 R0_value --experiment_idx experiment_index --other_parameters ...)

@@ -1,7 +1,7 @@
 # -*- ecoding: utf-8 -*-
 # @ModuleName: mobility_validation
 # @Function: 对比深圳市真实flow和用gravity/radiation模型生成的flow，选择最适合的模型
-# @Author: Lexie
+#  
 # @Time: 2023/12/27 19:40
 
 #TODO：相似度还没算！

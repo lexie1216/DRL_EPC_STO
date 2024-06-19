@@ -1,7 +1,7 @@
 # -*- ecoding: utf-8 -*-
 # @ModuleName: main3.py
 # @Function: 
-# @Author: Lexie
+#  
 # @Time: 2024/5/8 12:42
 import numpy as np
 from ppo_discrete import PPO_discrete

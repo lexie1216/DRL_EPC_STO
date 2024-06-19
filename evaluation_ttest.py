@@ -1,7 +1,6 @@
 # -*- ecoding: utf-8 -*-
 # @ModuleName: evaluation_t
-# @Function: 
-# @Author: Lexie
+# @Function:
 # @Time: 2024/5/30 16:16
 import pickle
 import numpy as np

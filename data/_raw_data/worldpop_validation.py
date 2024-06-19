@@ -2,7 +2,7 @@
 # @ModuleName: worldpop_validation
 # @Function: 以深圳市为例，分析worldpop数据是否可以作为一种替代方案
 # @Output: R2:0.7，输出一个clean版的csv，只有name，truth，predict
-# @Author: Lexie
+#  
 # @Time: 2023/12/27 19:27
 
 import numpy as np
