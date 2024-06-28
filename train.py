@@ -121,8 +121,8 @@ def my_test(args):
 
 
 def main(args, seed):
-    env = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0, use_trick=args.use_trick)
-    env_evaluate = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0, use_trick=args.use_trick)
+    env = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0)
+    env_evaluate = EpidemicModel(reward_mode=args.experiment_idx, city=args.city, R0=args.R0)
     # Set random seed
     env.seed(seed)
     env_evaluate.seed(seed)
